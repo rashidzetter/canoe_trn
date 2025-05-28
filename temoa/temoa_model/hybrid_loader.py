@@ -470,6 +470,10 @@ class HybridLoader:
         raw = cur.execute('SELECT tech FROM Technology WHERE retire > 0').fetchall()
         load_element(M.tech_retirement, raw, self.viable_techs)
 
+        # tech_cf_fixed - Rashid: added tech_cf_fixed to implement load distributions from EV chargers in CapacityFactorTech, see temoa_rules.py - Capacity_Constraint
+        raw = cur.execute('SELECT tech FROM Technology WHERE cf_fixed > 0').fetchall()
+        load_element(M.tech_cf_fixed, raw, self.viable_techs)
+
         #  === COMMODITIES ===
 
         # commodity_demand
@@ -483,7 +487,7 @@ class HybridLoader:
 
         # commodity_physical
         raw = cur.execute(
-            "SELECT name FROM main.Commodity WHERE flag = 'p' OR flag = 's'"
+            "SELECT name FROM main.Commodity WHERE flag = 'p' OR flag = 's' OR flag = 'a'"
         ).fetchall()
         # The model enforces 0 symmetric difference between the physical commodities
         # and the input commodities, so we need to include only the viable INPUTS
@@ -492,6 +496,10 @@ class HybridLoader:
         # commodity_source
         raw = cur.execute("SELECT name FROM main.Commodity WHERE flag = 's'").fetchall()
         load_element(M.commodity_source, raw, self.viable_input_comms)
+
+        # commodity_annual
+        raw = cur.execute("SELECT name FROM main.Commodity WHERE flag = 'a'").fetchall()
+        load_element(M.commodity_annual, raw, self.viable_input_comms)
 
         #  === PARAMS ===
 
@@ -909,7 +917,7 @@ class HybridLoader:
         # MinNewCapacityShare
         if self.table_exists('MinNewCapacityShare'):
             raw = cur.execute(
-                'SELECT region, period, tech, group_name, max_proportion FROM main.MinNewCapacityShare'
+                'SELECT region, period, tech, group_name, min_proportion FROM main.MinNewCapacityShare'
             ).fetchall()
             load_element(M.MinNewCapacityShare, raw, self.viable_rt, (0, 2))
 
@@ -920,6 +928,20 @@ class HybridLoader:
             ).fetchall()
             load_element(M.MaxNewCapacityShare, raw, self.viable_rt, (0, 2))
 
+        # MinCapacityGroupShare
+        if self.table_exists('MinCapacityGroupShare'):
+            raw = cur.execute(
+                'SELECT region, period, sub_group_name, group_name, min_proportion FROM main.MinCapacityGroupShare'
+            ).fetchall()
+            load_element(M.MinCapacityGroupShare, raw)
+
+        # MaxCapacityGroupShare
+        if self.table_exists('MaxCapacityGroupShare'):
+            raw = cur.execute(
+                'SELECT region, period, sub_group_name, group_name, max_proportion FROM main.MaxCapacityGroupShare'
+            ).fetchall()
+            load_element(M.MaxCapacityGroupShare, raw)
+        
         # MinNewCapacityGroupShare
         if self.table_exists('MinNewCapacityGroupShare'):
             raw = cur.execute(
@@ -1093,20 +1115,21 @@ class HybridLoader:
                 ).fetchall()
             # load_element(M.MaxGrowthRate, raw, self.viable_rt, (0, 2))
             load_element(M.MaxGrowthRateGroup, raw)
-        
-        # GrowthRateMin
-        if self.table_exists('GrowthRateMin'):
+
+        # TwoGroupGrowthRateMax
+        if self.table_exists('TwoGroupGrowthRateMax'):
             if mi:
                 raw = cur.execute(
-                    'SELECT region, period, tech, rate FROM main.GrowthRateMin '
+                    'SELECT region, period, sub_group_name, group_name, rate FROM main.TwoGroupGrowthRateMax '
                     'WHERE period >= ? AND period <= ?',
                     (mi.base_year, mi.last_demand_year),
                 ).fetchall()
             else:
                 raw = cur.execute(
-                    'SELECT region, period, tech, rate FROM main.GrowthRateMin '
+                    'SELECT region, period, sub_group_name, group_name, rate FROM main.TwoGroupGrowthRateMax '
                 ).fetchall()
-            load_element(M.MinGrowthRate, raw, self.viable_rt, (0, 2))
+            # load_element(M.MaxGrowthRate, raw, self.viable_rt, (0, 2))
+            load_element(M.MaxGrowthRateTwoGroup, raw)
 
         # GrowthRateSeed
         if self.table_exists('GrowthRateSeed'):
@@ -1115,9 +1138,9 @@ class HybridLoader:
 
         # GroupGrowthRateSeed
         if self.table_exists('GroupGrowthRateSeed'):
-            raw = cur.execute('SELECT region, group, seed FROM main.GroupGrowthRateSeed').fetchall()
+            raw = cur.execute('SELECT region, group_name, seed FROM main.GroupGrowthRateSeed').fetchall()
             # load_element(M.GrowthRateSeed, raw, self.viable_rt, (0, 1))
-            load_element(M.GrowthRateSeed, raw)
+            load_element(M.GrowthRateSeedGroup, raw)
 
         # EmissionLimit
         if self.table_exists('EmissionLimit'):
@@ -1266,13 +1289,14 @@ class HybridLoader:
             M.MaxAnnualCapacityFactor.name: M.MaxAnnualCapacityFactorConstraint_rpto.name,
             M.MaxGrowthRate.name: M.MaxGrowthRateConstraint_rpt.name,
             M.MaxGrowthRateGroup.name: M.MaxGrowthRateGroupConstraint_rpg.name,
-            M.MinGrowthRate.name: M.MinGrowthRateConstraint_rpt.name,
+            M.MaxGrowthRateTwoGroup.name: M.MaxGrowthRateTwoGroupConstraint_rpgg.name,
             M.MaxCapacity.name: M.MaxCapacityConstraint_rpt.name,
             M.MaxCapacityGroup.name: M.MaxCapacityGroupConstraint_rpg.name,
             M.MaxCapacityShare.name: M.MaxCapacityShareConstraint_rptg.name,
             M.MaxNewCapacity.name: M.MaxNewCapacityConstraint_rpt.name,
             M.MaxNewCapacityGroup.name: M.MaxNewCapacityGroupConstraint_rpg.name,
             M.MaxNewCapacityShare.name: M.MaxNewCapacityShareConstraint_rptg.name,
+            M.MaxCapacityGroupShare.name: M.MaxCapacityGroupShareConstraint_rpgg.name,
             M.MaxNewCapacityGroupShare.name: M.MaxNewCapacityGroupShareConstraint_rpgg.name,
             M.MaxResource.name: M.MaxResourceConstraint_rt.name,
             M.MinActivity.name: M.MinActivityConstraint_rpt.name,
@@ -1286,6 +1310,7 @@ class HybridLoader:
             M.MinNewCapacity.name: M.MinNewCapacityConstraint_rpt.name,
             M.MinNewCapacityGroup.name: M.MinNewCapacityGroupConstraint_rpg.name,
             M.MinNewCapacityShare.name: M.MinNewCapacityShareConstraint_rptg.name,
+            M.MinCapacityGroupShare.name: M.MinCapacityGroupShareConstraint_rpgg.name,
             M.MinNewCapacityGroupShare.name: M.MinNewCapacityGroupShareConstraint_rpgg.name,
             M.RenewablePortfolioStandard.name: M.RenewablePortfolioStandardConstraint_rpg.name,
             M.ResourceBound.name: M.ResourceConstraint_rpr.name,

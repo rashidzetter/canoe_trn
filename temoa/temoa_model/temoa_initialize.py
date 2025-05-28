@@ -110,7 +110,7 @@ def CommodityBalanceConstraintErrorCheckAnnual(vflow_out, vflow_in, r, p, c):
 def DemandConstraintErrorCheck(supply, r, p, s, d, dem):
     # note:  if a pyomo equation simplifies to an int, there are no variables in it, which
     #        is an indicator of a problem
-    if isinstance(supply, int):
+    if int is type(supply):
         msg = (
             "Error: Demand '{}' for ({}, {}, {}) unable to be met by any "
             'technology.\n\tPossible reasons:\n'
@@ -434,7 +434,7 @@ def CreateDemands(M: 'TemoaModel'):
             if DSD_dem_getter(k) == dem and DSD_region_getter(k) == r
         ]
         if len(keys) != expected_key_length:
-            logger.debug(
+            logger.warning(
                 'Missing some keys in this set for creation of Demand Distribution %s: %s',
                 dem,
                 keys,
@@ -949,7 +949,8 @@ def TwoGroupShareIndices(M: 'TemoaModel'):
 
     return indices
 
-def GrowthRateIndices(M: 'TemoaModel'):    # Rashid: created new index set for growth rate constraints
+
+def GrowthRateIndices(M: 'TemoaModel'): 
     indices = set(
         (r, p, t)
         for r, p, t in M.processVintages.keys()
@@ -957,6 +958,7 @@ def GrowthRateIndices(M: 'TemoaModel'):    # Rashid: created new index set for g
     )
 
     return indices
+
 
 def GrowthRateGroupIndices(M: 'TemoaModel'):
     indices = set(
@@ -1227,6 +1229,7 @@ def CommodityBalanceConstraintIndices(M: 'TemoaModel'):
         for r, p, o in period_commodity
         # r in this line includes interregional transfer combinations (not needed).
         if r in M.regions  # this line ensures only the regions are included.
+        and o not in M.commodity_annual
         for t, v in M.commodityUStreamProcess[r, p, o]
         if (r, t) not in M.tech_storage and t not in M.tech_annual
         for s in M.time_season
@@ -1248,7 +1251,24 @@ def CommodityBalanceAnnualConstraintIndices(M: 'TemoaModel'):
         # r in this line includes interregional transfer combinations (not needed).
         if r in M.regions  # this line ensures only the regions are included.
         for t, v in M.commodityUStreamProcess[r, p, o]
-        if (r, t) not in M.tech_storage and t in M.tech_annual
+        if (r, t) not in M.tech_storage and t in M.tech_annual # Why not in storage?
+    )
+
+    return indices
+
+
+def AnnualCommodityBalanceConstraintIndices(M: 'TemoaModel'):
+    # Generate indices only for those commodities that are produced by
+    # technologies with constant annual output.
+    period_commodity_with_up = set(M.commodityUStreamProcess.keys())
+    period_commodity_with_dn = set(M.commodityDStreamProcess.keys())
+    period_commodity = period_commodity_with_up.intersection(period_commodity_with_dn)
+    indices = set(
+        (r, p, o)
+        for r, p, o in period_commodity
+        # r in this line includes interregional transfer combinations (not needed).
+        if r in M.regions  # this line ensures only the regions are included.
+        and o in M.commodity_annual
     )
 
     return indices

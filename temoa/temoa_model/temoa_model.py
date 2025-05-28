@@ -155,6 +155,8 @@ class TemoaModel(AbstractModel):
         # ensure there is no overlap flex <=> curtailable technologies
         M.check_flex_and_curtailment = BuildAction(rule=check_flex_curtail)
         M.tech_exchange = Set(within=M.tech_all)
+        # Rashid: added tech_cf_fixed to implement load distributions from EV chargers in CapacityFactorTech, see temoa_rules.py - Capacity_Constraint
+        M.tech_cf_fixed = Set(within=M.tech_all)
 
         # Define groups for technologies
         M.tech_group_names = Set()
@@ -180,12 +182,13 @@ class TemoaModel(AbstractModel):
         M.commodity_emissions = Set()
         M.commodity_physical = Set()
         M.commodity_source = Set(within=M.commodity_physical)
+        M.commodity_annual = Set(within=M.commodity_physical)
         M.commodity_carrier = Set(initialize=M.commodity_physical | M.commodity_demand)
         M.commodity_all = Set(initialize=M.commodity_carrier | M.commodity_emissions)
 
         # Define sets for MGA weighting
         M.tech_mga = Set(within=M.tech_all)
-        M.tech_electric = Set(within=M.tech_all)
+        M.tech_electricity = Set(within=M.tech_all)
         M.tech_transport = Set(within=M.tech_all)
         M.tech_industrial = Set(within=M.tech_all)
         M.tech_commercial = Set(within=M.tech_all)
@@ -394,25 +397,14 @@ class TemoaModel(AbstractModel):
         #   Rashid: formalized formulation of growth rate constraints
         # M.GrowthRateMax = Param(M.RegionalIndices, M.time_optimize, M.tech_all)
 
-        # M.GrowthRateMin = Param(M.RegionalIndices, M.time_optimize, M.tech_all)
-
-        M.GrowthRateIndices = Set(
-            dimen=3,
-            initialize=GrowthRateIndices
-        )
-        M.GrowthRateGroupIndices = Set(
-            dimen=3,
-            initialize=GrowthRateGroupIndices
-        )
+        M.GrowthRateIndices = Set(dimen=3, initialize=GrowthRateIndices)
+        M.GrowthRateGroupIndices = Set(dimen=3, initialize=GrowthRateGroupIndices)
 
         M.MaxGrowthRateConstraint_rpt = Set(within=M.GrowthRateIndices)
         M.MaxGrowthRate = Param(M.GrowthRateIndices)
 
         M.MaxGrowthRateGroupConstraint_rpg = Set(within=M.GrowthRateGroupIndices)
         M.MaxGrowthRateGroup = Param(M.GrowthRateGroupIndices)
-
-        M.MinGrowthRateConstraint_rpt = Set(within=M.GrowthRateIndices)
-        M.MinGrowthRate = Param(M.GrowthRateIndices)
 
         M.GrowthRateSeed = Param(M.RegionalIndices, M.tech_all)
         M.GrowthRateSeedGroup = Param(M.RegionalIndices, M.tech_group_names)
@@ -475,11 +467,22 @@ class TemoaModel(AbstractModel):
         M.MaxNewCapacityShare = Param(M.GroupShareIndices)
         
         M.TwoGroupShareIndices = Set(dimen=4, initialize=TwoGroupShareIndices)
+        
+        M.MinCapacityGroupShareConstraint_rpgg = Set(within=M.TwoGroupShareIndices)
+        M.MinCapacityGroupShare = Param(M.TwoGroupShareIndices)
+
+        M.MaxCapacityGroupShareConstraint_rpgg = Set(within=M.TwoGroupShareIndices)
+        M.MaxCapacityGroupShare = Param(M.TwoGroupShareIndices)
+
         M.MinNewCapacityGroupShareConstraint_rpgg = Set(within=M.TwoGroupShareIndices)
         M.MinNewCapacityGroupShare = Param(M.TwoGroupShareIndices)
 
         M.MaxNewCapacityGroupShareConstraint_rpgg = Set(within=M.TwoGroupShareIndices)
         M.MaxNewCapacityGroupShare = Param(M.TwoGroupShareIndices)
+
+        M.MaxGrowthRateTwoGroupConstraint_rpgg = Set(within=M.TwoGroupShareIndices)
+        M.MaxGrowthRateTwoGroup = Param(M.TwoGroupShareIndices)
+
         M.LinkedTechs = Param(M.RegionalIndices, M.tech_all, M.commodity_emissions, within=Any)
 
         # Define parameters associated with electric sector operation
@@ -622,6 +625,13 @@ class TemoaModel(AbstractModel):
             M.CommodityBalanceAnnualConstraint_rpc, rule=CommodityBalanceAnnual_Constraint
         )
 
+        M.AnnualCommodityBalanceConstraint_rpc = Set(
+            dimen=3, initialize=AnnualCommodityBalanceConstraintIndices
+        )
+        M.AnnualCommodityBalanceConstraint = Constraint(
+            M.AnnualCommodityBalanceConstraint_rpc, rule=AnnualCommodityBalance_Constraint
+        )
+
         M.ResourceExtractionConstraint = Constraint(
             M.ResourceConstraint_rpr, rule=ResourceExtraction_Constraint
         )
@@ -728,8 +738,8 @@ class TemoaModel(AbstractModel):
             M.MaxGrowthRateGroupConstraint_rpg, rule=MaxGrowthRateGroupConstraint_rule
         )
 
-        M.MinGrowthRateConstraint = Constraint(
-            M.MinGrowthRateConstraint_rpt, rule=MinGrowthRateConstraint_rule
+        M.MaxGrowthRateTwoGroupConstraint = Constraint(
+            M.MaxGrowthRateTwoGroupConstraint_rpgg, rule=MaxGrowthRateTwoGroupConstraint_rule
         )
 
         M.MaxActivityConstraint = Constraint(
@@ -804,6 +814,14 @@ class TemoaModel(AbstractModel):
             M.MaxNewCapacityShareConstraint_rptg, rule=MaxNewCapacityShare_Constraint
         )
 
+        M.MinCapacityGroupShareConstraint = Constraint(
+            M.MinCapacityGroupShareConstraint_rpgg, rule=MinCapacityGroupShare_Constraint
+        )
+
+        M.MaxCapacityGroupShareConstraint = Constraint(
+            M.MaxCapacityGroupShareConstraint_rpgg, rule=MaxCapacityGroupShare_Constraint
+        )
+        
         M.MinNewCapacityGroupShareConstraint = Constraint(
             M.MinNewCapacityGroupShareConstraint_rpgg, rule=MinNewCapacityGroupShare_Constraint
         )

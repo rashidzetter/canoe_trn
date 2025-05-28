@@ -151,12 +151,12 @@ class TableWriter:
         e_costs, e_flows = self._gather_emission_costs_and_flows(M)
         self.emission_register = e_flows
         self.write_emissions(iteration=iteration)
-        self.write_costs(M, emission_entries=e_costs, iteration=iteration)
+        self.write_costs(M, emission_entries=e_costs)
         self.flow_register = self.calculate_flows(M)
         self.check_flow_balance(M)
         self.write_flow_tables(iteration=iteration)
         if results_with_duals:  # write the duals
-            self.write_dual_variables(results_with_duals, iteration=iteration)
+            self.write_dual_variables(results_with_duals)
         # catch-all
         self.con.commit()
         self.con.execute('VACUUM')
@@ -256,7 +256,7 @@ class TableWriter:
         if not self.tech_sectors:
             raise RuntimeError('tech sectors not available... code error')
         scenario = self.config.scenario
-        if iteration is not None:
+        if iteration:
             scenario = scenario + f'-{iteration}'
         # Built Capacity
         data = []
@@ -535,6 +535,7 @@ class TableWriter:
             invest_cost,
             loan_annualize=loan_ar,
             lifetime_loan_process=loan_life,
+            lifetime_process=process_life,
             P_0=p_0,
             P_e=p_e,
             GDR=global_discount_rate,
@@ -547,6 +548,7 @@ class TableWriter:
             invest_cost,
             loan_annualize=loan_ar,
             lifetime_loan_process=loan_life,
+            lifetime_process=process_life,
             P_0=p_0,
             P_e=p_e,
             GDR=global_discount_rate,
@@ -706,8 +708,16 @@ class TableWriter:
                 entries[k].update(emission_entries[k])
         # write to table
         # translate the entries into fodder for the query
-        self._write_cost_rows(entries, iteration=iteration)
-        self._write_cost_rows(exchange_costs.get_entries(), iteration=iteration)
+
+        if isinstance(iteration, int):
+            scenario = self.config.scenario + f'-{iteration}'
+        elif iteration is None:
+            scenario = self.config.scenario
+        else:
+            raise ValueError(f'Illegal (non integer) value received for iteration: {iteration}')
+        
+        self._write_cost_rows(entries, scenario)
+        self._write_cost_rows(exchange_costs.get_entries(), scenario)
 
     def _gather_emission_costs_and_flows(self, M: 'TemoaModel'):
         """Gather all emission flows and price them"""
@@ -785,16 +795,12 @@ class TableWriter:
         # wow, that was like pulling teeth
         return costs, flows
 
-    def _write_cost_rows(self, entries, iteration=None):
+    def _write_cost_rows(self, entries, scenario=None):
         """Write the entries to the OutputCost table"""
-        scenario_name = (
-            self.config.scenario + f'-{iteration}'
-            if iteration is not None
-            else self.config.scenario
-        )
+        if scenario is None: scenario = self.config.scenario
         rows = [
             (
-                scenario_name,
+                scenario,
                 r,
                 p,
                 t,
@@ -817,15 +823,11 @@ class TableWriter:
         cur.executemany(qry, rows)
         self.con.commit()
 
-    def write_dual_variables(self, results: SolverResults, iteration=None):
+    def write_dual_variables(self, results: SolverResults):
         """Write the dual variables to the OutputCost table"""
-        scenario_name = (
-            self.config.scenario + f'-{iteration}'
-            if iteration is not None
-            else self.config.scenario
-        )  # collect the values
+        # collect the values
         constraint_data = results['Solution'].Constraint.items()
-        dual_data = [(scenario_name, t[0], t[1]['Dual']) for t in constraint_data]
+        dual_data = [(self.config.scenario, t[0], t[1]['Dual']) for t in constraint_data]
         qry = 'INSERT INTO OutputDualVariable VALUES (?, ?, ?)'
         self.con.executemany(qry, dual_data)
         self.con.commit()

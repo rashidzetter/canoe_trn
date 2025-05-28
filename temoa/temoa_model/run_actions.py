@@ -34,6 +34,7 @@ from sys import stderr as SE, version_info
 from time import time
 from typing import Tuple
 
+import deprecated
 from pyomo.environ import (
     DataPortal,
     Suffix,
@@ -52,6 +53,27 @@ from temoa.temoa_model.temoa_config import TemoaConfig
 from temoa.temoa_model.temoa_model import TemoaModel
 
 logger = getLogger(__name__)
+
+
+@deprecated.deprecated('dat files are no longer supported...for removal')
+def load_portal_from_dat(dat_file: Path, silent: bool = False) -> DataPortal:
+    loaded_portal = DataPortal(model=TemoaModel())
+
+    if dat_file.suffix != '.dat':
+        logger.error('Attempted to load data from file %s which is not a .dat file', dat_file)
+        raise TypeError('file loading error occurred, see log')
+    hack = time()
+    if not silent:
+        SE.write('[        ] Reading data files.')
+        SE.flush()
+
+    logger.debug('Started loading the DataPortal from the .dat file: %s', dat_file)
+    loaded_portal.load(filename=str(dat_file))
+
+    if not silent:
+        SE.write('\r[%8.2f] Data read.\n' % (time() - hack))
+    logger.debug('Finished creating the DataPortal from the .dat')
+    return loaded_portal
 
 
 def check_python_version(min_major, min_minor) -> bool:
@@ -154,7 +176,7 @@ def build_instance(
     logger.info('Started creating model instance from data')
     instance = model.create_instance(loaded_portal, name=model_name)
     if not silent:
-        SE.write('\r[%8.2f] Instance created.\n' % (time() - hack))
+        SE.write('\r[%8.2f] Instance created.          \n' % (time() - hack))
         SE.flush()
     logger.info('Finished creating model instance from data')
 
@@ -250,7 +272,7 @@ def solve_instance(
             optimizer.options["Crossover"] = 0 # non basic solution, ie no crossover
             optimizer.options["BarConvTol"] = 1.e-5
             optimizer.options["FeasibilityTol"] = 1.e-6
-            # pass
+            # optimizer.options["BarOrder"] = 0 # ONLY if ordering is taking forever. Try 0 or 1
 
         elif solver_name == 'appsi_highs':
             pass
@@ -261,7 +283,7 @@ def solve_instance(
         #            solve command for highspy and no suffixes because it works so well.
         if solver_suffixes:
             solver_suffixes = set(solver_suffixes)
-            legit_suffixes = {'dual', 'slack', 'rc'}
+            legit_suffixes = {'duals', 'slack', 'rc'}
             bad_apples = solver_suffixes - legit_suffixes
             solver_suffixes &= legit_suffixes
             if bad_apples:
@@ -269,18 +291,13 @@ def solve_instance(
                     'Solver suffix %s is not in pyomo standards (see pyomo dox).  Removed',
                     bad_apples,
                 )
-            # convert back to list...
-            solver_suffixes = list(solver_suffixes)
         else:
             solver_suffixes = []
-        result: SolverResults | None = None
         try:
-            # currently, the highs solver call will puke if the suffixes are passed, so we need to
-            # differentiate...
-            if solver_name == 'appsi_highs':
-                result = optimizer.solve(instance, tee=True)
-            else:
-                result = optimizer.solve(instance, suffixes=solver_suffixes, tee=True)
+            if solver_name == 'appsi_highs' and not solver_suffixes:
+                result: SolverResults = optimizer.solve(instance, tee=True)
+            else:  # we can try it...
+                result: SolverResults = optimizer.solve(instance, suffixes=solver_suffixes, tee=True)
         except RuntimeError as error:
             logger.error('Solver failed to solve and returned an error: %s', error)
             logger.error(
@@ -326,9 +343,7 @@ def check_solve_status(result: SolverResults) -> tuple[bool, str]:
         return False, f'{soln.Status} was returned from solve'
 
 
-def handle_results(
-    instance: TemoaModel, results, config: TemoaConfig, append=False, iteration=None
-):
+def handle_results(instance: TemoaModel, results, config: TemoaConfig):
     hack = time()
     if not config.silent:
         msg = '[        ] Calculating reporting variables and formatting results.'
@@ -338,11 +353,9 @@ def handle_results(
 
     table_writer = TableWriter(config=config)
     if config.save_duals:
-        table_writer.write_results(
-            M=instance, results_with_duals=results, append=append, iteration=iteration
-        )
+        table_writer.write_results(M=instance, results_with_duals=results)
     else:
-        table_writer.write_results(M=instance, append=append, iteration=iteration)
+        table_writer.write_results(M=instance)
 
     if not config.silent:
         SE.write(
@@ -351,15 +364,17 @@ def handle_results(
         SE.flush()
 
     if config.save_excel:
-        scenario_name = (
-            config.scenario + f'-{iteration}' if iteration is not None else config.scenario
-        )
         temp_scenario = set()
-        temp_scenario.add(scenario_name)
-        excel_filename = config.output_path / scenario_name
+        temp_scenario.add(config.scenario)
+        excel_filename = config.output_path / config.scenario
         make_excel(str(config.output_database), excel_filename, temp_scenario)
-
+        
     # normal (non-MGA) run will have a TotalCost as the OBJ:
     if hasattr(instance, 'TotalCost'):
         logger.info('TotalCost value: %0.2f', value(instance.TotalCost))
+    # MGA runs should have either a FirstObj or SecondObj
+    if hasattr(instance, 'FirstObj'):
+        logger.info('MGA First Obj value: %0.2f', value(instance.FirstObj))
+    elif hasattr(instance, 'SecondObj'):
+        logger.info('MGA Second Obj value: %0.2f', value(instance.SecondObj))
     return
