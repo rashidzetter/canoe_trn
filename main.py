@@ -16,6 +16,8 @@ from temoa.temoa_model.temoa_model import TemoaModel
 from temoa.temoa_model.temoa_sequencer import TemoaMode, TemoaSequencer
 from temoa.version_information import TEMOA_MAJOR, TEMOA_MINOR
 
+import tomllib
+
 # Written by:  J. F. Hyink
 # jeff@westernspark.us
 # https://westernspark.us
@@ -113,6 +115,17 @@ def parse_args(arg_list: list[str] | None) -> argparse.Namespace:
 
     # validate the output folder if provided, or make the default
     output_path: Path
+
+    # --- NEW: peek into the TOML to find the scenario name -------------
+    scenario_name = None
+    if options.config_file and Path(options.config_file).is_file():
+        try:
+            with open(options.config_file, 'rb') as f:
+                scenario_name = tomllib.load(f).get('scenario')
+        except Exception as exc:
+            logger.warning('Could not read scenario from %s (%s)', options.config_file, exc)
+    # -------------------------------------------------------------------
+    
     if options.output_path:
         if not Path(options.output_path).is_dir():
             raise FileNotFoundError(
@@ -122,7 +135,8 @@ def parse_args(arg_list: list[str] | None) -> argparse.Namespace:
         else:
             output_path = Path(options.output_path)
     else:
-        output_path = create_output_folder()
+        # output_path = create_output_folder()
+        output_path = create_output_folder(scenario_name)   # pass scenario name
     # capture it in options
     options.output_path = output_path
     definitions.set_OUTPUT_PATH(options.output_path)
@@ -150,17 +164,27 @@ def parse_args(arg_list: list[str] | None) -> argparse.Namespace:
         logger.info('Build-only selected.')
     return options
 
+def _safe_fs(text: str) -> str:
+    """strip/replace characters that would break a folder name"""
+    keep = set(" -_.")
+    return "".join(c if (c.isalnum() or c in keep) else "_" for c in text).rstrip()
 
-def create_output_folder() -> Path:
-    """
-    create a time-stamped folder as the default catch-all for outputs
-    :return: Path to default folder
-    """
-    output_path = Path(PROJECT_ROOT, 'output_files', datetime.now().strftime('%Y-%m-%d %H%Mh'))
-    if not output_path.is_dir():
-        output_path.mkdir()
-    return output_path
+# def create_output_folder() -> Path:
+#     """
+#     create a time-stamped folder as the default catch-all for outputs
+#     :return: Path to default folder
+#     """
+#     output_path = Path(PROJECT_ROOT, 'output_files', datetime.now().strftime('%Y-%m-%d %H%Mh'))
+#     if not output_path.is_dir():
+#         output_path.mkdir()
+#     return output_path
 
+def create_output_folder(scenario: str | None = None) -> Path:          
+    stamp   = datetime.now().strftime('%Y-%m-%d %H%Mh')
+    dirname = f"{stamp} {_safe_fs(scenario)}" if scenario else stamp
+    output  = Path(PROJECT_ROOT, 'output_files', dirname)
+    output.mkdir(parents=True, exist_ok=True)
+    return output
 
 def setup_logging(output_path: Path, debug_level=False):
     # set up logger

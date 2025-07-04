@@ -982,6 +982,17 @@ def EmissionActivityIndices(M: 'TemoaModel'):
     return indices
 
 
+def EmissionEmbodiedIndices(M: 'TemoaModel'):
+    indices = set(
+        (r, e, t, v)
+        for r, i, t, v, o in M.Efficiency.sparse_iterkeys()
+        for e in M.commodity_emissions
+        if r in M.regions  # omit any exchange/groups
+    )
+
+    return indices
+
+
 def EmissionActivityByPeriodAndTechVariableIndices(M: 'TemoaModel'):
     indices = set(
         (e, p, t) for e, i, t, v, o in M.EmissionActivity.sparse_iterkeys() for p in M.time_optimize

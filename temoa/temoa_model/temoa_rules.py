@@ -592,9 +592,25 @@ def PeriodCost_rule(M: 'TemoaModel', p):
         for (r, p, e, i, t, v, o) in annual
         if t not in M.tech_flex
     )
+
     # 5. flex annual emissions -- removed (double counting)
 
-    period_emission_cost = var_emissions + var_annual_emissions
+    # 6. embodied emissions
+    embodied_emissions = sum(
+        fixed_or_variable_cost(
+            cap_or_flow=M.V_NewCapacity[r, t, v] * M.EmissionEmbodied[r, e, t, v] / M.PeriodLength[v],
+            cost_factor=M.CostEmission[r, p, e],
+            process_lifetime=M.PeriodLength[v], # We assume the embodied emissions are emitted in the same year as the capacity is installed.
+            GDR=GDR,
+            P_0=P_0,
+            p=p,
+        )
+        for (r, e, t, v) in M.EmissionEmbodied.sparse_iterkeys()
+        if (r, p, e) in M.CostEmission 
+        if v == p
+    )
+
+    period_emission_cost = var_emissions + var_annual_emissions + embodied_emissions
 
     period_costs = (
         loan_costs + fixed_costs + variable_costs + variable_costs_annual + period_emission_cost
@@ -1976,7 +1992,15 @@ def EmissionLimit_Constraint(M: 'TemoaModel', r, p, e):
         if (reg, p, S_t, S_v) in M.processInputs.keys()
     )
 
-    expr = actual_emissions + actual_emissions_annual <= emission_limit
+    embodied_emissions = sum(
+        M.V_NewCapacity[r, t, v]
+        * M.EmissionEmbodied[r, e, t, v]
+        / M.PeriodLength[v]
+        for (S_r, S_e, t, v) in M.EmissionEmbodied.sparse_iterkeys()
+        if v == p and S_r == r and S_e == e
+    )
+
+    expr = actual_emissions + actual_emissions_annual + embodied_emissions <= emission_limit
 
     # in the case that there is nothing to sum, skip
     if isinstance(expr, bool):  # an empty list was generated
@@ -2022,7 +2046,7 @@ def MaxGrowthRateConstraint_rule(M: 'TemoaModel', r, p, t):             # Rashid
     else:
         p_prev = periods[periods.index(p) - 1]
         expr = NCap[r, t, p] <= (GRM + 1) * NCap[r, t, p_prev]          # Rashid: + GRS was missing in the original rule, therefore denying any growth for every tech with no capacity on p0
-    print('\n', expr)
+    # print('\n', expr)
     return expr
 
 
@@ -2066,7 +2090,7 @@ def MaxGrowthRateGroupConstraint_rule(M: 'TemoaModel', r, p, g):
         )
         
         expr = GCapT <= (GRM + 1) * GCapT_prev + GRS      
-    print('\n', expr)
+    # print('\n', expr)
     return expr
 
 ##################################################
@@ -2109,7 +2133,7 @@ def MaxGrowthRateGroupConstraint_rule(M: 'TemoaModel', r, p, g):
 #         )
         
 #         expr = GNCap <= (GRM + 1) * GNCap_prev + GRS      
-#     print('\n', expr)
+#     # print('\n', expr)
 #     return expr
 
 
@@ -2150,7 +2174,7 @@ def MaxGrowthRateTwoGroupConstraint_rule(M: 'TemoaModel', r, p, g1, g2):
         )
         
         expr = GNCap <= GRM * GCapT_prev + GRS      
-    print('\n', expr)
+    # print('\n', expr)
     return expr
 
 

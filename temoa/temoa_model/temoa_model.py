@@ -416,6 +416,9 @@ class TemoaModel(AbstractModel):
         M.EmissionActivity_reitvo = Set(dimen=6, initialize=EmissionActivityIndices)
         M.EmissionActivity = Param(M.EmissionActivity_reitvo)
 
+        M.EmissionEmbodied_retv = Set(dimen=4, initialize=EmissionEmbodiedIndices)
+        M.EmissionEmbodied = Param(M.EmissionEmbodied_retv)
+
         M.MinActivityGroup_rpg = Set(
             within=M.RegionalGlobalIndices * M.time_optimize * M.tech_group_names
         )

@@ -55,27 +55,6 @@ from temoa.temoa_model.temoa_model import TemoaModel
 logger = getLogger(__name__)
 
 
-@deprecated.deprecated('dat files are no longer supported...for removal')
-def load_portal_from_dat(dat_file: Path, silent: bool = False) -> DataPortal:
-    loaded_portal = DataPortal(model=TemoaModel())
-
-    if dat_file.suffix != '.dat':
-        logger.error('Attempted to load data from file %s which is not a .dat file', dat_file)
-        raise TypeError('file loading error occurred, see log')
-    hack = time()
-    if not silent:
-        SE.write('[        ] Reading data files.')
-        SE.flush()
-
-    logger.debug('Started loading the DataPortal from the .dat file: %s', dat_file)
-    loaded_portal.load(filename=str(dat_file))
-
-    if not silent:
-        SE.write('\r[%8.2f] Data read.\n' % (time() - hack))
-    logger.debug('Finished creating the DataPortal from the .dat')
-    return loaded_portal
-
-
 def check_python_version(min_major, min_minor) -> bool:
     if (min_major, min_minor) >= version_info:
         logger.error(
@@ -283,7 +262,7 @@ def solve_instance(
         #            solve command for highspy and no suffixes because it works so well.
         if solver_suffixes:
             solver_suffixes = set(solver_suffixes)
-            legit_suffixes = {'duals', 'slack', 'rc'}
+            legit_suffixes = {'dual', 'slack', 'rc'}
             bad_apples = solver_suffixes - legit_suffixes
             solver_suffixes &= legit_suffixes
             if bad_apples:
@@ -291,13 +270,18 @@ def solve_instance(
                     'Solver suffix %s is not in pyomo standards (see pyomo dox).  Removed',
                     bad_apples,
                 )
+            # convert back to list...
+            solver_suffixes = list(solver_suffixes)
         else:
             solver_suffixes = []
+        result: SolverResults | None = None
         try:
-            if solver_name == 'appsi_highs' and not solver_suffixes:
-                result: SolverResults = optimizer.solve(instance, tee=True)
-            else:  # we can try it...
-                result: SolverResults = optimizer.solve(instance, suffixes=solver_suffixes, tee=True)
+            # currently, the highs solver call will puke if the suffixes are passed, so we need to
+            # differentiate...
+            if solver_name == 'appsi_highs':
+                result = optimizer.solve(instance)
+            else:
+                result = optimizer.solve(instance, suffixes=solver_suffixes)
         except RuntimeError as error:
             logger.error('Solver failed to solve and returned an error: %s', error)
             logger.error(
